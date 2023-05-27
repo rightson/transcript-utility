@@ -1,6 +1,10 @@
 # YouTube Transcript Generator
 
-Usage:
+**Dependencies**: ChatGPT API.
+
+**Prerequisites**: Ensure that your OpenAI API key is set as the `OPENAI_API_KEY` environment variable.
+
+**Usage**:
 ```py
 from yt_transcript import YouTubeTranscript
 
