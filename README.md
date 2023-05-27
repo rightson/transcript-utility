@@ -24,3 +24,6 @@ Upon successful completion of the transcription, you can call `ytt.clean()` to r
 ```py
 ytt.clean()
 ```
+
+# License
+This utility is distributed under the MIT License.
