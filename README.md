@@ -1,7 +1,7 @@
 # Youtube Transcript Generator
 
 Usage:
-```
+```py
 from yt_transcript import YouTubeTranscript
 
 url = 'https://www.youtube.com/watch?v=8p0oCUE3mWE'
