@@ -13,8 +13,8 @@ class YouTubeTranscript:
         if not os.path.exists(output_name):
             os.makedirs(output_name)
             os.makedirs(os.path.join(output_name, 'chunks'))
-        self.audio = f'{output_name}/{output_name}'
-        self.audio_file_name = f'{self.audio}.wav'
+        self.output_prefix = f'{output_name}/{output_name}'
+        intermediate_audio_path = f'{self.output_prefix}.wav'
         openai.api_key = os.environ.get('OPENAI_API_KEY') or open_api_key
 
     def get_transcript(self, chunk_second=100):
@@ -40,17 +40,18 @@ class YouTubeTranscript:
         return transcript
 
     def get_input_audio(self):
-        if not os.path.exists(self.audio):
+        if not os.path.exists(self.output_prefix):
             yt = YouTube(self.url)
             audio_stream = yt.streams.filter(only_audio=True).first()
-            print(f'Downloading {self.audio} from {self.url}')
+            print(f'Downloading {self.output_prefix} from {self.url}')
             audio_stream.download(output_path=self.output_name, filename=self.output_name)
-        if not os.path.exists(self.audio_file_name):
-            print(f'Exporting {self.audio_file_name} from {self.audio}')
-            input_audio = AudioSegment.from_file(self.audio)
-            input_audio.export(self.audio_file_name, format='wav')
-        print(f'Opening {self.audio_file_name}')
-        input_audio = AudioSegment.from_wav(self.audio_file_name)
+        intermediate_audio_path = f'{self.output_prefix}.wav'
+        if not os.path.exists(intermediate_audio_path):
+            print(f'Exporting {intermediate_audio_path} from {self.output_prefix}')
+            input_audio = AudioSegment.from_file(self.output_prefix)
+            input_audio.export(intermediate_audio_path, format='wav')
+        print(f'Opening {intermediate_audio_path}')
+        input_audio = AudioSegment.from_wav(intermediate_audio_path)
         return input_audio
 
     def get_chunks_by_seconds(self, full_data, chunk_second):
