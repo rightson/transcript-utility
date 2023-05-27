@@ -18,20 +18,20 @@ class YouTubeTranscript:
         openai.api_key = os.environ.get('OPENAI_API_KEY') or open_api_key
 
     def get_transcript(self, chunk_second=100):
-        input_audio = self.get_input_audio()
+        input_audio = self._get_input_audio()
         transcript = ''
-        chunks = self.get_chunks_by_seconds(input_audio, chunk_second)
+        chunks = self._get_chunks_by_seconds(input_audio, chunk_second)
         for i, chunk in enumerate(chunks):
             chunk_transcript_path = f'{self.output_name}/chunks/{self.output_name}_chunk{i}.txt'
             exists = os.path.exists(chunk_transcript_path)
             print(f'Finding {chunk_transcript_path}', exists)
             if not exists:
-                chunk_audio = self.get_chunk_file(i, chunk)
+                chunk_audio = self._get_chunk_file(i, chunk)
                 if not chunk_audio:
                     break
-                chunk_transcript = self.transcribe(chunk_audio, chunk_transcript_path)
+                chunk_transcript = self._transcribe(chunk_audio, chunk_transcript_path)
             else:
-                chunk_transcript = self.read_transcript(chunk_transcript_path)
+                chunk_transcript = self._read_transcript(chunk_transcript_path)
             transcript += chunk_transcript
         if transcript:
             with open(self.output_transcript, 'w') as f:
@@ -39,7 +39,10 @@ class YouTubeTranscript:
             print(f'Saved transcript to {self.output_transcript}')
         return transcript
 
-    def get_input_audio(self):
+    def clean(self):
+        shutil.rmtree(self.output_name)
+
+    def _get_input_audio(self):
         if not os.path.exists(self.output_prefix):
             yt = YouTube(self.url)
             audio_stream = yt.streams.filter(only_audio=True).first()
@@ -54,13 +57,13 @@ class YouTubeTranscript:
         input_audio = AudioSegment.from_wav(intermediate_audio_path)
         return input_audio
 
-    def get_chunks_by_seconds(self, full_data, chunk_second):
+    def _get_chunks_by_seconds(self, full_data, chunk_second):
         chunk_size = chunk_second * 1000
         chunks = [full_data[i:i+chunk_size] for i in range(0, len(full_data), chunk_size)]
         print(f'Dividing the file into {len(chunks)} {chunk_second}-second chunks')
         return chunks
 
-    def get_chunk_file(self, i, chunk):
+    def _get_chunk_file(self, i, chunk):
         prefix_name = f'{self.output_name}/chunks/{self.output_name}_chunk{i}'
         full_name = f'{prefix_name}.wav'
         if not os.path.exists(full_name):
@@ -71,20 +74,17 @@ class YouTubeTranscript:
             chunk_file = open(full_name, 'rb')
         return chunk_file
 
-    def transcribe(self, input_audio, output_file):
+    def _transcribe(self, input_audio, output_file):
         with input_audio as f:
-            result = openai.Audio.transcribe('whisper-1', f)
+            result = openai.Audio._transcribe('whisper-1', f)
             text = result['text']
             with open(output_file, 'w') as f:
                 f.write(text)
             print('Transcribed:', text)
             return text
 
-    def read_transcript(self, path):
+    def _read_transcript(self, path):
         with open(path, 'r') as f:
             text = f.read()
             print('Transcript:', text)
             return text
-
-    def clean(self):
-        shutil.rmtree(self.output_name)
