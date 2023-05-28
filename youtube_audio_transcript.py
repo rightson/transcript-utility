@@ -1,4 +1,5 @@
 import os
+import sys
 import shutil
 import logging
 import openai
@@ -13,7 +14,7 @@ if LOG_LEVEL not in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']:
 logging.basicConfig(level=LOG_LEVEL)
 
 
-class YouTubeTranscript:
+class YouTubeAudioTranscript:
     def __init__(self, url, output_name, open_api_key=''):
         self.url = url
         self.output_name = output_name
@@ -22,7 +23,6 @@ class YouTubeTranscript:
             os.makedirs(output_name)
             os.makedirs(os.path.join(output_name, 'chunks'))
         self.output_prefix = f'{output_name}/{output_name}'
-        intermediate_audio_path = f'{self.output_prefix}.wav'
         openai.api_key = os.environ.get('OPENAI_API_KEY') or open_api_key
 
     def get_transcript(self, chunk_second=100):
@@ -38,8 +38,7 @@ class YouTubeTranscript:
                 if not chunk_audio:
                     raise ValueError(
                         f'Error generating audio chunk {i}. Stopping transcript generation.')
-                chunk_transcript = self._transcribe(
-                    chunk_audio, chunk_transcript_path)
+                chunk_transcript = self._transcribe(chunk_audio, chunk_transcript_path)
             else:
                 chunk_transcript = self._read_transcript(chunk_transcript_path)
             transcript += chunk_transcript
@@ -66,8 +65,7 @@ class YouTubeTranscript:
             input_audio = AudioSegment.from_file(self.output_prefix)
             input_audio.export(intermediate_audio_path, format='wav')
         logging.debug(f'Opening {intermediate_audio_path}')
-        input_audio = AudioSegment.from_wav(intermediate_audio_path)
-        return input_audio
+        return AudioSegment.from_wav(intermediate_audio_path)
 
     def _get_chunks_by_seconds(self, full_data, chunk_second):
         chunk_size = chunk_second * 1000
@@ -94,11 +92,13 @@ class YouTubeTranscript:
             text = result['text']
             with open(output_file, 'w') as f:
                 f.write(text)
-            logging.info('Transcribed: ' + text)
+            logging.debug('Transcribed')
+            sys.stdout.write(text)
             return text
 
     def _read_transcript(self, path):
         with open(path, 'r') as f:
             text = f.read()
-            logging.info('Transcript: ' + text)
+            logging.debug('Transcript')
+            sys.stdout.write(text)
             return text
