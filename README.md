@@ -32,5 +32,14 @@ Upon successful completion of the transcription, you can call `yat.clean()` to r
 yat.clean()
 ```
 
+# Important Notice
+**Legal and Responsible Usage of the YouTube Video Download Utility**:
+
+It's important to emphasize that the utility I provided should only be used to download YouTube videos in compliance with YouTube's terms of service and applicable copyright laws. Before downloading any video, ensure that you have explicit permission from the video owner or that the video is licensed under a permissive Creative Commons license or similar open license.
+
+Downloading videos from YouTube without permission from the content owner is generally prohibited and may infringe upon their rights. YouTube's terms of service explicitly state that users should not access, reproduce, download, distribute, or create derivative works from the content available on their platform, unless explicitly permitted by YouTube or the content owner.
+
+Always respect the intellectual property rights of others and use this utility responsibly and legally.
+
 # License
 This utility is distributed under the MIT License.
