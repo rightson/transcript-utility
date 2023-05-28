@@ -50,21 +50,21 @@ class YouTubeAudioTranscript:
             yt = YouTube(self.url)
             audio_stream = yt.streams.filter(only_audio=True).first()
 
-            logging.debug(f'Downloading {self.output_prefix} from {self.url}')
+            logging.info(f'Downloading {self.output_prefix} from {self.url}')
             audio_stream.download(output_path=self.output_dir, filename=self.output_prefix.name)
 
-            logging.debug(f'Exporting {audio_path} from {self.output_prefix}')
+            logging.info(f'Exporting {audio_path} from {self.output_prefix}')
             input_audio = AudioSegment.from_file(self.output_prefix)
             input_audio.export(audio_path, format='wav')
 
-        logging.debug(f'Opening {audio_path}')
+        logging.info(f'Opening {audio_path}')
         return AudioSegment.from_wav(audio_path)
 
     def _split_audio_into_chunks(self, full_audio, chunk_duration_in_sec):
         chunk_size = chunk_duration_in_sec * 1000
         chunks = [full_audio[i:i + chunk_size]for i in range(0, len(full_audio), chunk_size)]
 
-        logging.debug(f'Divided the file into {len(chunks)} chunks of {chunk_duration_in_sec} seconds each.')
+        logging.info(f'Divided the file into {len(chunks)} chunks of {chunk_duration_in_sec} seconds each.')
         return chunks
 
     def _generate_transcript(self, chunks):
@@ -85,23 +85,23 @@ class YouTubeAudioTranscript:
 
     def _export_chunk_to_file(self, chunk, chunk_file_path):
         if not chunk_file_path.exists():
-            logging.debug(f'Exporting new chunk file {chunk_file_path}')
+            logging.info(f'Exporting new chunk file {chunk_file_path}')
             chunk.export(chunk_file_path, format='wav')
         else:
-            logging.debug(f'Opening existing chunk file {chunk_file_path}')
+            logging.info(f'Opening existing chunk file {chunk_file_path}')
 
     def _transcribe_audio_chunk(self, chunk_file_path, transcript_file_path):
         with open(chunk_file_path, 'rb') as audio_file:
             transcription_result = openai.Audio.transcribe('whisper-1', audio_file)
             transcript_text = transcription_result['text']
             transcript_file_path.write_text(transcript_text)
-            logging.debug('Transcribed')
+            logging.info('Transcribed')
             print(transcript_text)
             return transcript_text
 
     def _read_transcript(self, transcript_file_path):
         transcript_text = transcript_file_path.read_text()
-        logging.debug('Transcript')
+        logging.info('Transcript')
         print(transcript_text)
         return transcript_text
 
