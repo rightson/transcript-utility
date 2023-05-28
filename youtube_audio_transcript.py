@@ -1,14 +1,15 @@
-import os
 import sys
-import shutil
 import logging
+import shutil
 import openai
-from pytube import YouTube
+from pathlib import Path
 from pydub import AudioSegment
+from pytube import YouTube
 
-LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO').upper()
+LOG_LEVEL = (os.environ.get('LOG_LEVEL', 'INFO')).upper()
+VALID_LOG_LEVELS = ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']
 
-if LOG_LEVEL not in ['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG', 'NOTSET']:
+if LOG_LEVEL not in VALID_LOG_LEVELS:
     LOG_LEVEL = 'INFO'
 
 logging.basicConfig(level=LOG_LEVEL)
@@ -17,88 +18,91 @@ logging.basicConfig(level=LOG_LEVEL)
 class YouTubeAudioTranscript:
     def __init__(self, url, output_name, open_api_key=''):
         self.url = url
-        self.output_name = output_name
-        self.output_transcript = f'{output_name}.txt'
-        if not os.path.exists(output_name):
-            os.makedirs(output_name)
-            os.makedirs(os.path.join(output_name, 'chunks'))
-        self.output_prefix = f'{output_name}/{output_name}'
-        openai.api_key = os.environ.get('OPENAI_API_KEY') or open_api_key
+        self.output_dir = Path(output_name)
+        self.transcript_path = self.output_dir / f'{output_name}.txt'
+        self.output_prefix = self.output_dir / output_name
+        self.chunk_dir = self.output_dir / 'chunks'
 
-    def get_transcript(self, chunk_second=100):
+        # Creating required directories if they don't exist
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.chunk_dir.mkdir(parents=True, exist_ok=True)
+
+        # Setting OpenAI API key
+        openai.api_key = os.environ.get('OPENAI_API_KEY', open_api_key)
+
+    def get_transcript(self, chunk_duration_in_sec=100):
         input_audio = self._get_input_audio()
-        transcript = ''
-        chunks = self._get_chunks_by_seconds(input_audio, chunk_second)
-        for i, chunk in enumerate(chunks):
-            chunk_transcript_path = f'{self.output_name}/chunks/{self.output_name}_chunk{i}.txt'
-            exists = os.path.exists(chunk_transcript_path)
-            logging.debug(f'Finding {chunk_transcript_path}: {exists}')
-            if not exists:
-                chunk_audio = self._get_chunk_file(i, chunk)
-                if not chunk_audio:
-                    raise ValueError(
-                        f'Error generating audio chunk {i}. Stopping transcript generation.')
-                chunk_transcript = self._transcribe(chunk_audio, chunk_transcript_path)
-            else:
-                chunk_transcript = self._read_transcript(chunk_transcript_path)
-            transcript += chunk_transcript
+        chunks = self._split_audio_into_chunks(input_audio, chunk_duration_in_sec)
+        transcript = self._generate_transcript(chunks)
+
         if transcript:
-            with open(self.output_transcript, 'w') as f:
-                f.write(transcript)
-            logging.info(f'Saved transcript to {self.output_transcript}')
+            self.transcript_path.write_text(transcript)
+            logging.info(f'Saved transcript to {self.transcript_path}')
+
         return transcript
 
     def clean(self):
-        shutil.rmtree(self.output_name)
+        shutil.rmtree(self.output_dir)
 
     def _get_input_audio(self):
-        if not os.path.exists(self.output_prefix):
+        audio_path = self.output_prefix.with_suffix('.wav')
+
+        if not audio_path.exists():
             yt = YouTube(self.url)
             audio_stream = yt.streams.filter(only_audio=True).first()
-            logging.debug(f'Downloading {self.output_prefix} from {self.url}')
-            audio_stream.download(
-                output_path=self.output_name, filename=self.output_name)
-        intermediate_audio_path = f'{self.output_prefix}.wav'
-        if not os.path.exists(intermediate_audio_path):
-            logging.debug(
-                f'Exporting {intermediate_audio_path} from {self.output_prefix}')
-            input_audio = AudioSegment.from_file(self.output_prefix)
-            input_audio.export(intermediate_audio_path, format='wav')
-        logging.debug(f'Opening {intermediate_audio_path}')
-        return AudioSegment.from_wav(intermediate_audio_path)
 
-    def _get_chunks_by_seconds(self, full_data, chunk_second):
-        chunk_size = chunk_second * 1000
-        chunks = [full_data[i:i+chunk_size]
-                  for i in range(0, len(full_data), chunk_size)]
-        logging.debug(
-            f'Dividing the file into {len(chunks)} {chunk_second}-second chunks')
+            logging.debug(f'Downloading {self.output_prefix} from {self.url}')
+            audio_stream.download(output_path=self.output_dir, filename=self.output_prefix.name)
+
+            logging.debug(f'Exporting {audio_path} from {self.output_prefix}')
+            input_audio = AudioSegment.from_file(self.output_prefix)
+            input_audio.export(audio_path, format='wav')
+
+        logging.debug(f'Opening {audio_path}')
+        return AudioSegment.from_wav(audio_path)
+
+    def _split_audio_into_chunks(self, full_audio, chunk_duration_in_sec):
+        chunk_size = chunk_duration_in_sec * 1000
+        chunks = [full_audio[i:i + chunk_size] for i in range(0, len(full_audio), chunk_size)]
+
+        logging.debug(f'Divided the file into {len(chunks)} chunks of {chunk_duration_in_sec} seconds each.')
         return chunks
 
-    def _get_chunk_file(self, i, chunk):
-        prefix_name = f'{self.output_name}/chunks/{self.output_name}_chunk{i}'
-        full_name = f'{prefix_name}.wav'
-        if not os.path.exists(full_name):
-            logging.debug(f'Exporting new chunk file {full_name}')
-            chunk_file = chunk.export(prefix_name, format='wav')
+    def _generate_transcript(self, chunks):
+        transcript = ''
+        for i, chunk in enumerate(chunks):
+            chunk_file_path = self.chunk_dir / f'{self.output_dir.name}_chunk{i}.wav'
+            transcript_file_path = self.chunk_dir / f'{self.output_dir.name}_chunk{i}.txt'
+
+            if transcript_file_path.exists():
+                transcript_chunk = self._read_transcript(transcript_file_path)
+            else:
+                self._export_chunk_to_file(chunk, chunk_file_path)
+                transcript_chunk = self._transcribe_audio_chunk(chunk_file_path, transcript_file_path)
+
+            transcript += transcript_chunk
+
+        return transcript
+
+    def _export_chunk_to_file(self, chunk, chunk_file_path):
+        if not chunk_file_path.exists():
+            logging.debug(f'Exporting new chunk file {chunk_file_path}')
+            chunk.export(chunk_file_path, format='wav')
         else:
-            logging.debug(f'Opening existing chunk file {full_name}')
-            chunk_file = open(full_name, 'rb')
-        return chunk_file
+            logging.debug(f'Opening existing chunk file {chunk_file_path}')
 
-    def _transcribe(self, input_audio, output_file):
-        with input_audio as f:
-            result = openai.Audio._transcribe('whisper-1', f)
-            text = result['text']
-            with open(output_file, 'w') as f:
-                f.write(text)
+    def _transcribe_audio_chunk(self, chunk_file_path, transcript_file_path):
+        with open(chunk_file_path, 'rb') as audio_file:
+            transcription_result = openai.Audio.transcribe('whisper-1', audio_file)
+            transcript_text = transcription_result['text']
+            transcript_file_path.write_text(transcript_text)
             logging.debug('Transcribed')
-            sys.stdout.write(text)
-            return text
+            sys.stdout.write(transcript_text)
+            return transcript_text
 
-    def _read_transcript(self, path):
-        with open(path, 'r') as f:
-            text = f.read()
-            logging.debug('Transcript')
-            sys.stdout.write(text)
-            return text
+    def _read_transcript(self, transcript_file_path):
+        transcript_text = transcript_file_path.read_text()
+        logging.debug('Transcript')
+        sys.stdout.write(transcript_text)
+        return transcript_text
+
