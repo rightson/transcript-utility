@@ -1,3 +1,4 @@
+import os
 import sys
 import logging
 import shutil
@@ -19,7 +20,7 @@ class YouTubeAudioTranscript:
     def __init__(self, url, output_name, open_api_key=''):
         self.url = url
         self.output_dir = Path(output_name)
-        self.transcript_path = self.output_dir / f'{output_name}.txt'
+        self.transcript_path = Path.cwd() / f'{output_name}.txt'
         self.output_prefix = self.output_dir / output_name
         self.chunk_dir = self.output_dir / 'chunks'
 
@@ -30,8 +31,12 @@ class YouTubeAudioTranscript:
         # Setting OpenAI API key
         openai.api_key = os.environ.get('OPENAI_API_KEY', open_api_key)
 
-    def get_transcript(self, chunk_duration_in_sec=100):
+    def get_transcript(self, start_time=None, end_time=None, chunk_duration_in_sec=100):
         input_audio = self._get_input_audio()
+        start_time = YouTubeAudioTranscript.convert_time_to_seconds(start_time) * 1000 if start_time is not None else None
+        end_time = YouTubeAudioTranscript.convert_time_to_seconds(end_time) * 1000 if end_time is not None else None
+        input_audio = input_audio[start_time:end_time]
+
         chunks = self._split_audio_into_chunks(input_audio, chunk_duration_in_sec)
         transcript = self._generate_transcript(chunks)
 
@@ -40,6 +45,7 @@ class YouTubeAudioTranscript:
             logging.info(f'Saved transcript to {self.transcript_path}')
 
         return transcript
+
 
     def clean(self):
         shutil.rmtree(self.output_dir)
@@ -98,11 +104,20 @@ class YouTubeAudioTranscript:
             transcript_file_path.write_text(transcript_text)
             logging.debug('Transcribed')
             sys.stdout.write(transcript_text)
+            sys.stdout.flush()
             return transcript_text
 
     def _read_transcript(self, transcript_file_path):
         transcript_text = transcript_file_path.read_text()
         logging.debug('Transcript')
         sys.stdout.write(transcript_text)
+        sys.stdout.flush()
         return transcript_text
 
+    @staticmethod
+    def convert_time_to_seconds(time_str):
+        if ':' in time_str:  # time is in "minute:second" format
+            minutes, seconds = map(int, time_str.split(':'))
+            return minutes * 60 + seconds
+        else:  # time is in seconds
+            return int(time_str)
