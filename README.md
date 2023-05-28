@@ -26,12 +26,6 @@ The `start_time` and `end_time` parameters allow you to specify a segment of the
 
 The `yat` object supports incremental transcription. If `yat.get_transcript()` gets interrupted unexpectedly, you can re-run the command and the transcription will resume where it left off.
 
-Upon successful completion of the transcription, you can call `yat.clean()` to remove all intermediate files. Be aware, however, that once `yat.clean()` is called, all the intermediate files will be removed and the incremental transcription process will be reset.
-
-```py
-yat.clean()
-```
-
 Here's another example without specifying start_time and end_time:
 
 ```
@@ -39,7 +33,6 @@ url = 'https://www.youtube.com/watch?v=rC2hBUhOqag'
 output_name = 'gooaye-ep352'
 ytt = YouTubeAudioTranscript(url, output_name)
 ytt.get_transcript()
-yat.clean()
 ```
 
 # Important Notice
