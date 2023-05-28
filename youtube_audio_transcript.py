@@ -33,11 +33,14 @@ class YouTubeAudioTranscript:
 
     def get_transcript(self, start_time=None, end_time=None, chunk_duration_in_sec=100):
         input_audio = self._get_input_audio()
-        start_time = YouTubeAudioTranscript.convert_time_to_seconds(start_time) * 1000 if start_time is not None else None
-        end_time = YouTubeAudioTranscript.convert_time_to_seconds(end_time) * 1000 if end_time is not None else None
+        start_time = YouTubeAudioTranscript.convert_time_to_seconds(
+            start_time) * 1000 if start_time is not None else None
+        end_time = YouTubeAudioTranscript.convert_time_to_seconds(
+            end_time) * 1000 if end_time is not None else None
         input_audio = input_audio[start_time:end_time]
 
-        chunks = self._split_audio_into_chunks(input_audio, chunk_duration_in_sec)
+        chunks = self._split_audio_into_chunks(
+            input_audio, chunk_duration_in_sec)
         transcript = self._generate_transcript(chunks)
 
         if transcript:
@@ -45,7 +48,6 @@ class YouTubeAudioTranscript:
             logging.info(f'Saved transcript to {self.transcript_path}')
 
         return transcript
-
 
     def clean(self):
         shutil.rmtree(self.output_dir)
@@ -58,7 +60,8 @@ class YouTubeAudioTranscript:
             audio_stream = yt.streams.filter(only_audio=True).first()
 
             logging.debug(f'Downloading {self.output_prefix} from {self.url}')
-            audio_stream.download(output_path=self.output_dir, filename=self.output_prefix.name)
+            audio_stream.download(
+                output_path=self.output_dir, filename=self.output_prefix.name)
 
             logging.debug(f'Exporting {audio_path} from {self.output_prefix}')
             input_audio = AudioSegment.from_file(self.output_prefix)
@@ -69,22 +72,27 @@ class YouTubeAudioTranscript:
 
     def _split_audio_into_chunks(self, full_audio, chunk_duration_in_sec):
         chunk_size = chunk_duration_in_sec * 1000
-        chunks = [full_audio[i:i + chunk_size] for i in range(0, len(full_audio), chunk_size)]
+        chunks = [full_audio[i:i + chunk_size]
+                  for i in range(0, len(full_audio), chunk_size)]
 
-        logging.debug(f'Divided the file into {len(chunks)} chunks of {chunk_duration_in_sec} seconds each.')
+        logging.debug(
+            f'Divided the file into {len(chunks)} chunks of {chunk_duration_in_sec} seconds each.')
         return chunks
 
     def _generate_transcript(self, chunks):
         transcript = ''
         for i, chunk in enumerate(chunks):
-            chunk_file_path = self.chunk_dir / f'{self.output_dir.name}_chunk{i}.wav'
-            transcript_file_path = self.chunk_dir / f'{self.output_dir.name}_chunk{i}.txt'
+            chunk_file_path = self.chunk_dir / \
+                f'{self.output_dir.name}_chunk{i}.wav'
+            transcript_file_path = self.chunk_dir / \
+                f'{self.output_dir.name}_chunk{i}.txt'
 
             if transcript_file_path.exists():
                 transcript_chunk = self._read_transcript(transcript_file_path)
             else:
                 self._export_chunk_to_file(chunk, chunk_file_path)
-                transcript_chunk = self._transcribe_audio_chunk(chunk_file_path, transcript_file_path)
+                transcript_chunk = self._transcribe_audio_chunk(
+                    chunk_file_path, transcript_file_path)
 
             transcript += transcript_chunk
 
@@ -99,7 +107,8 @@ class YouTubeAudioTranscript:
 
     def _transcribe_audio_chunk(self, chunk_file_path, transcript_file_path):
         with open(chunk_file_path, 'rb') as audio_file:
-            transcription_result = openai.Audio.transcribe('whisper-1', audio_file)
+            transcription_result = openai.Audio.transcribe(
+                'whisper-1', audio_file)
             transcript_text = transcription_result['text']
             transcript_file_path.write_text(transcript_text)
             logging.debug('Transcribed')
