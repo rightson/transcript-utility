@@ -32,6 +32,16 @@ Upon successful completion of the transcription, you can call `yat.clean()` to r
 yat.clean()
 ```
 
+Here's another example without specifying start_time and end_time:
+
+```
+url = 'https://www.youtube.com/watch?v=rC2hBUhOqag'
+output_name = 'gooaye-ep352'
+ytt = YouTubeAudioTranscript(url, output_name)
+ytt.get_transcript()
+yat.clean()
+```
+
 # Important Notice
 **Legal and Responsible Usage of the YouTube Video Download Utility**:
 
