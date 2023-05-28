@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 import shutil
 import openai
@@ -97,15 +96,13 @@ class YouTubeAudioTranscript:
             transcript_text = transcription_result['text']
             transcript_file_path.write_text(transcript_text)
             logging.debug('Transcribed')
-            sys.stdout.write(transcript_text)
-            sys.stdout.flush()
+            print(transcript_text)
             return transcript_text
 
     def _read_transcript(self, transcript_file_path):
         transcript_text = transcript_file_path.read_text()
         logging.debug('Transcript')
-        sys.stdout.write(transcript_text)
-        sys.stdout.flush()
+        print(transcript_text)
         return transcript_text
 
     @staticmethod
