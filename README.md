@@ -5,6 +5,15 @@
 **Prerequisites**: Ensure that your OpenAI API key is set as the `OPENAI_API_KEY` environment variable.
 
 **Usage**:
+```
+YouTubeAudioTranscript(
+    'https://www.youtube.com/watch?v=rC2hBUhOqag',
+    'gooaye-ep352'
+).get_transcript()
+```
+
+Here's another example specifying start_time and end_time:
+
 ```py
 from youtube_audio_transcript import YouTubeAudioTranscript
 
@@ -25,15 +34,6 @@ Using the `yat` object, the video from the specified URL is downloaded into a fo
 The `start_time` and `end_time` parameters allow you to specify a segment of the video to transcribe. You can specify these times in seconds or as a string in the format "minutes:seconds". If these parameters are not provided, the entire video will be transcribed.
 
 The `yat` object supports incremental transcription. If `yat.get_transcript()` gets interrupted unexpectedly, you can re-run the command and the transcription will resume where it left off.
-
-Here's another example without specifying start_time and end_time:
-
-```
-url = 'https://www.youtube.com/watch?v=rC2hBUhOqag'
-output_name = 'gooaye-ep352'
-ytt = YouTubeAudioTranscript(url, output_name)
-ytt.get_transcript()
-```
 
 # Important Notice
 **Legal and Responsible Usage of the YouTube Video Download Utility**:
