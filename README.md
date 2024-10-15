@@ -1,6 +1,6 @@
-# YouTube Transcript Generator
+# Transcript Generator
 
-This utility allows you to download audio from YouTube videos and generate transcripts. It supports incremental processing, can handle interruptions gracefully, and now offers the option to use local Whisper models for transcription.
+This utility allows you to download audio from YouTube videos, generate transcripts from those videos, and even transcribe any audio file you provide. It supports incremental processing, can handle interruptions gracefully, and now offers the option to use local Whisper models (including OpenAI's whisper-1) for transcription.
 
 ## Dependencies
 
