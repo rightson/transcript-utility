@@ -1,3 +1,6 @@
 __pycache__/
-*/chunks/
 venv/
+**chunks**
+*.txt
+*.wav
+*.mp3
