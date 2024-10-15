@@ -49,7 +49,7 @@ class AudioTranscript:
         shutil.rmtree(self.output_dir)
 
     def _get_input_audio(self, wav_path=None):
-        audio_path = wav_path if wav_path else self.output_prefix.with_suffix('.wav')            
+        audio_path = wav_path if wav_path else self.output_prefix.with_suffix('.wav')
         logging.info(f'Opening {audio_path}')
         return AudioSegment.from_wav(audio_path)
 
@@ -105,8 +105,8 @@ class AudioTranscript:
             return int(time_str)
 
 class YouTubeAudioTranscript(AudioTranscript):
-     def _get_input_audio(self, wav_path=None):
-        audio_path = wav_path if wav_path else self.output_prefix.with_suffix('.wav')            
+    def _get_input_audio(self, wav_path=None):
+        audio_path = wav_path if wav_path else self.output_prefix.with_suffix('.wav')
 
         if not audio_path.exists():
             yt = YouTube(self.source)
@@ -135,10 +135,10 @@ if __name__ == '__main__':
 
     if os.path.exists(args.source):
         AudioTranscript(
-            args.source, 
+            args.source,
             args.output_name).get_transcript(
                 wav_path=args.source, no_clean_up=args.no_clean_up)
     else:
         YouTubeAudioTranscript(
-            args.source, 
+            args.source,
             args.output_name).get_transcript(no_clean_up=args.no_clean_up)
