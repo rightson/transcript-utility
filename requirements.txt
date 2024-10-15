@@ -1,4 +1,4 @@
 openai
 yt-dlp
 pydub
-whisper
+openai-whisper

@@ -1,16 +1,23 @@
 import yt_dlp
 import openai
 import os
-from pydub import AudioSegment
+import sys
 import math
 import argparse
 import logging
 import glob
 import whisper
+import warnings
+import torch
+from pydub import AudioSegment
+
+try:
+    import whisper
+except ImportError:
+    whisper = None
 
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
-# Set up logging
 log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(level=log_level)
 logger = logging.getLogger(__name__)
@@ -18,6 +25,7 @@ logger = logging.getLogger(__name__)
 def ensure_dir(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
+        logger.info(f"Created directory: {directory}")
 
 def yt_url_to_audio(source_url, base_name='audio', force_download=False):
     output_dir = base_name
@@ -25,32 +33,104 @@ def yt_url_to_audio(source_url, base_name='audio', force_download=False):
     output_file = os.path.join(output_dir, f'{base_name}.mp3')
 
     if os.path.exists(output_file) and not force_download:
-        if input(f"{output_file} already exists. Download again? (y/n): ").lower() != 'y':
+        user_choice = input(f"{output_file} already exists. Do you want to use the existing file? (y/n): ").lower()
+        if user_choice == 'y':
             logger.info(f"Using existing file: {output_file}")
             return output_file
+        elif user_choice != 'n':
+            logger.warning("Invalid input. Proceeding with download.")
+    elif force_download:
+        logger.info(f"Force download option is set. Redownloading {output_file}")
+
 
     ydl_opts = {
         'format': 'bestaudio/best',
-        'outtmpl': output_file,
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
             'preferredquality': '192',
         }],
+        'outtmpl': os.path.join(output_dir, '%(title)s.%(ext)s'),  # Changed this line
+        'quiet': False,
+        'no_warnings': False,
+        'ignoreerrors': False,
+        'nocheckcertificate': True,
+        'prefer_ffmpeg': True,
         'logger': logger,
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        logger.debug(f"Downloading audio from: {source_url}")
-        ydl.download([source_url])
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            logger.info(f"Downloading audio from: {source_url}")
+            info = ydl.extract_info(source_url, download=True)
+            if 'entries' in info:
+                # Can be a playlist or a list of videos
+                video = info['entries'][0]
+            else:
+                # Just a video
+                video = info
+            logger.info(f"Video title: {video.get('title')}")
+            logger.info(f"Duration: {video.get('duration')} seconds")
 
+            # Get the actual output filename
+            output_file = ydl.prepare_filename(video)
+            output_file = os.path.splitext(output_file)[0] + '.mp3'  # Ensure .mp3 extension
+
+            # Rename the file if a base_name was provided
+            if base_name != 'audio':
+                new_output_file = os.path.join(output_dir, f'{base_name}.mp3')
+                os.rename(output_file, new_output_file)
+                output_file = new_output_file
+
+    except yt_dlp.utils.DownloadError as e:
+        logger.error(f"yt-dlp download error: {e}")
+        if "This video is not available" in str(e):
+            logger.error("The video might be private or region-restricted.")
+        elif "Video unavailable" in str(e):
+            logger.error("The video might have been removed or is unavailable.")
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading video: {e}")
+        raise
+
+    if not os.path.exists(output_file):
+        raise FileNotFoundError(f"Failed to download audio from {source_url}. Output file not found: {output_file}")
+
+    logger.info(f"Audio file downloaded successfully: {output_file}")
     return output_file
+
 def transcribe_audio(file_path, whisper_model=None):
     if whisper_model:
+        if whisper is None:
+            logger.error("Local Whisper model specified, but whisper module is not installed.")
+            logger.info("Please install it with: pip install openai-whisper")
+            raise ImportError("whisper module not found")
+
         logger.info(f"Transcribing with local Whisper model: {whisper_model}")
-        model = whisper.load_model(whisper_model)
-        result = model.transcribe(file_path)
-        return result["text"]
+        try:
+            # Suppress the FutureWarning
+            warnings.filterwarnings("ignore", category=FutureWarning, module="torch.serialization")
+
+            # Determine the device
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            logger.info(f"Using device: {device}")
+
+            # Load the model with the appropriate device
+            model = whisper.load_model(whisper_model, device=device)
+
+            # Transcribe with appropriate device
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning)
+                result = model.transcribe(file_path, fp16=False)  # Force FP32
+
+            return result["text"]
+        except AttributeError:
+            logger.error("The installed whisper module does not have the expected 'load_model' function.")
+            logger.info("This might be a different 'whisper' module. Please ensure you have openai-whisper installed.")
+            raise
+        except Exception as e:
+            logger.error(f"Error during transcription: {e}")
+            raise
     else:
         logger.info("Transcribing with OpenAI API")
         with open(file_path, 'rb') as audio_file:
@@ -62,16 +142,34 @@ def transcribe_audio(file_path, whisper_model=None):
         return transcript
 
 def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms=60000, whisper_model=None):
+    if not os.path.exists(audio_file_path):
+        raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
+
     if not base_name:
         base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
 
     output_dir = base_name
     ensure_dir(output_dir)
 
-    logger.debug(f"Processing audio file: {audio_file_path}")
-    audio = AudioSegment.from_mp3(audio_file_path)
+    final_transcript_file = os.path.join(output_dir, f"{base_name}.txt")
+
+    if os.path.exists(final_transcript_file):
+        user_choice = input(f"Transcript file {final_transcript_file} already exists. Do you want to use the existing file? (y/n): ").lower()
+        if user_choice == 'y':
+            logger.info(f"Using existing transcript file: {final_transcript_file}")
+            return final_transcript_file
+        elif user_choice != 'n':
+            logger.warning("Invalid input. Proceeding with transcription.")
+
+    logger.info(f"Processing audio file: {audio_file_path}")
+    try:
+        audio = AudioSegment.from_mp3(audio_file_path)
+    except Exception as e:
+        logger.error(f"Error loading audio file: {e}")
+        raise
+
     chunks = math.ceil(len(audio) / chunk_length_ms)
-    logger.debug(f'Total chunks: {chunks}')
+    logger.info(f'Total chunks: {chunks}')
 
     # Check for existing intermediate files
     existing_chunks = sorted(glob.glob(os.path.join(output_dir, f'{base_name}_chunk_*.txt')))
@@ -114,12 +212,32 @@ def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms
     for chunk_file in all_chunk_transcripts:
         os.remove(chunk_file)
 
-def youtube_to_transcript(source_url, base_name='', whisper_model=None):
+def youtube_to_transcript(source_url, base_name='', whisper_model=None, force_download=False):
+    logger.info("Checking for existing transcript...")
+    if not base_name:
+        base_name = os.path.splitext(os.path.basename(source_url))[0]
+
+    output_dir = base_name
+    ensure_dir(output_dir)
+    final_transcript_file = os.path.join(output_dir, f"{base_name}.txt")
+
+    if os.path.exists(final_transcript_file):
+        user_choice = input(f"Transcript file {final_transcript_file} already exists. Do you want to use the existing file? (y/n): ").lower()
+        if user_choice == 'y':
+            logger.info(f"Using existing transcript file: {final_transcript_file}")
+            return final_transcript_file
+        elif user_choice != 'n':
+            logger.warning("Invalid input. Proceeding with download and transcription.")
+
     logger.info("Downloading and converting YouTube video to audio...")
-    audio_file = yt_url_to_audio(source_url, base_name, force_download=True)
-    logger.info(f"Audio file: {audio_file}")
-    logger.info("Transcribing audio...")
-    mp3_to_transcript(audio_file, base_name, whisper_model=whisper_model)
+    try:
+        audio_file = yt_url_to_audio(source_url, base_name, force_download=force_download)
+        logger.info(f"Audio file: {audio_file}")
+        logger.info("Transcribing audio...")
+        return mp3_to_transcript(audio_file, base_name, whisper_model=whisper_model)
+    except Exception as e:
+        logger.error(f"Error in youtube_to_transcript: {e}")
+        raise
 
 def main():
     parser = argparse.ArgumentParser(description="Transcript Utility")
@@ -127,8 +245,10 @@ def main():
                         help="Action to perform: y2a (YouTube to Audio), a2t (Audio to Transcript), or y2t (YouTube to Transcript)")
     parser.add_argument('source', help="YouTube URL or audio file path")
     parser.add_argument('base_name', nargs='?', default='', help="Base name for output files (optional)")
-    parser.add_argument('--whisper', choices=['base', 'small', 'medium', 'large', 'turbo'],
+    parser.add_argument('--whisper', choices=['tiny', 'base', 'small', 'medium', 'large'],
                         help="Use local Whisper model instead of OpenAI API")
+    parser.add_argument('--force-download', action='store_true', help="Force download even if the file exists")
+    parser.add_argument('--force-transcribe', action='store_true', help="Force transcription even if the transcript file exists")
 
     args = parser.parse_args()
 
@@ -137,15 +257,29 @@ def main():
 
     whisper_model = args.whisper if args.whisper else None
 
-    if args.action == 'y2a':
-        audio_file = yt_url_to_audio(args.source, args.base_name)
-        logger.info(f"Audio downloaded: {audio_file}")
-        if input("Do you want to transcribe this audio? (y/n): ").lower() == 'y':
-            mp3_to_transcript(audio_file, args.base_name, whisper_model=whisper_model)
-    elif args.action == 'a2t':
-        mp3_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
-    elif args.action == 'y2t':
-        youtube_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
+    try:
+        if args.action == 'y2a':
+            audio_file = yt_url_to_audio(args.source, args.base_name, force_download=args.force_download)
+            logger.info(f"Audio downloaded: {audio_file}")
+            if input("Do you want to transcribe this audio? (y/n): ").lower() == 'y':
+                mp3_to_transcript(audio_file, args.base_name, whisper_model=whisper_model)
+        elif args.action == 'a2t':
+            if args.force_transcribe:
+                mp3_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
+            else:
+                transcript_file = mp3_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
+                if transcript_file:
+                    logger.info(f"Transcript file: {transcript_file}")
+        elif args.action == 'y2t':
+            if args.force_transcribe:
+                youtube_to_transcript(args.source, args.base_name, whisper_model=whisper_model, force_download=args.force_download)
+            else:
+                transcript_file = youtube_to_transcript(args.source, args.base_name, whisper_model=whisper_model, force_download=args.force_download)
+                if transcript_file:
+                    logger.info(f"Transcript file: {transcript_file}")
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     main()

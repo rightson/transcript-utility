@@ -17,7 +17,7 @@ This utility allows you to download audio from YouTube videos and generate trans
 ## Installation
 
 ```bash
-pip install openai yt-dlp pydub whisper
+pip install openai yt-dlp pydub openai-whisper
 ```
 
 ## Usage
