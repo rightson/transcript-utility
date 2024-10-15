@@ -6,7 +6,7 @@ import math
 import argparse
 import logging
 import glob
-import shutil
+import whisper
 
 openai.api_key = os.environ.get('OPENAI_API_KEY')
 
@@ -45,8 +45,23 @@ def yt_url_to_audio(source_url, base_name='audio', force_download=False):
         ydl.download([source_url])
 
     return output_file
+def transcribe_audio(file_path, whisper_model=None):
+    if whisper_model:
+        logger.info(f"Transcribing with local Whisper model: {whisper_model}")
+        model = whisper.load_model(whisper_model)
+        result = model.transcribe(file_path)
+        return result["text"]
+    else:
+        logger.info("Transcribing with OpenAI API")
+        with open(file_path, 'rb') as audio_file:
+            transcript = openai.Audio.transcribe(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text"
+            )
+        return transcript
 
-def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms=60000):
+def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms=60000, whisper_model=None):
     if not base_name:
         base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
 
@@ -57,16 +72,6 @@ def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms
     audio = AudioSegment.from_mp3(audio_file_path)
     chunks = math.ceil(len(audio) / chunk_length_ms)
     logger.debug(f'Total chunks: {chunks}')
-
-    def transcribe_audio(file_path):
-        logger.debug(f"Transcribing: {file_path}")
-        with open(file_path, 'rb') as audio_file:
-            transcript = openai.Audio.transcribe(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text"
-            )
-        return transcript
 
     # Check for existing intermediate files
     existing_chunks = sorted(glob.glob(os.path.join(output_dir, f'{base_name}_chunk_*.txt')))
@@ -82,7 +87,7 @@ def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms
         logger.debug(f'Processing chunk: {chunk_file_path}')
         chunk.export(chunk_file_path, format='mp3')
 
-        transcript = transcribe_audio(chunk_file_path)
+        transcript = transcribe_audio(chunk_file_path, whisper_model)
         with open(chunk_transcript_path, 'w', encoding='utf-8') as f:
             f.write(transcript)
 
@@ -109,12 +114,12 @@ def mp3_to_transcript(audio_file_path='audio.mp3', base_name='', chunk_length_ms
     for chunk_file in all_chunk_transcripts:
         os.remove(chunk_file)
 
-def youtube_to_transcript(source_url, base_name=''):
+def youtube_to_transcript(source_url, base_name='', whisper_model=None):
     logger.info("Downloading and converting YouTube video to audio...")
     audio_file = yt_url_to_audio(source_url, base_name, force_download=True)
     logger.info(f"Audio file: {audio_file}")
     logger.info("Transcribing audio...")
-    mp3_to_transcript(audio_file, base_name)
+    mp3_to_transcript(audio_file, base_name, whisper_model=whisper_model)
 
 def main():
     parser = argparse.ArgumentParser(description="Transcript Utility")
@@ -122,21 +127,25 @@ def main():
                         help="Action to perform: y2a (YouTube to Audio), a2t (Audio to Transcript), or y2t (YouTube to Transcript)")
     parser.add_argument('source', help="YouTube URL or audio file path")
     parser.add_argument('base_name', nargs='?', default='', help="Base name for output files (optional)")
+    parser.add_argument('--whisper', choices=['base', 'small', 'medium', 'large', 'turbo'],
+                        help="Use local Whisper model instead of OpenAI API")
 
     args = parser.parse_args()
 
     if not args.base_name:
         args.base_name = os.path.splitext(os.path.basename(args.source))[0]
 
+    whisper_model = args.whisper if args.whisper else None
+
     if args.action == 'y2a':
         audio_file = yt_url_to_audio(args.source, args.base_name)
         logger.info(f"Audio downloaded: {audio_file}")
         if input("Do you want to transcribe this audio? (y/n): ").lower() == 'y':
-            mp3_to_transcript(audio_file, args.base_name)
+            mp3_to_transcript(audio_file, args.base_name, whisper_model=whisper_model)
     elif args.action == 'a2t':
-        mp3_to_transcript(args.source, args.base_name)
+        mp3_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
     elif args.action == 'y2t':
-        youtube_to_transcript(args.source, args.base_name)
+        youtube_to_transcript(args.source, args.base_name, whisper_model=whisper_model)
 
 if __name__ == '__main__':
     main()
