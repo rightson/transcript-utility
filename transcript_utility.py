@@ -5,6 +5,7 @@ import math
 import os
 import sys
 import warnings
+import tempfile
 from typing import Optional, Callable
 from functools import wraps
 
@@ -38,10 +39,11 @@ def error_handler(func: Callable) -> Callable:
 def ensure_directory(func: Callable) -> Callable:
     @wraps(func)
     def wrapper(*args, **kwargs):
-        result = func(*args, **kwargs)
-        if isinstance(result, str) and os.path.isfile(result):
-            ensure_dir(os.path.dirname(result))
-        return result
+        # Get the output directory from the function's arguments
+        output_dir = next((arg for arg in args if isinstance(arg, str) and '/' in arg), None)
+        if output_dir:
+            ensure_dir(os.path.dirname(output_dir))
+        return func(*args, **kwargs)
     return wrapper
 
 # Helper functions
@@ -161,14 +163,15 @@ class Transcriber:
 # Main functions
 @error_handler
 @ensure_directory
-def mp3_to_transcript(audio_file_path: str = 'audio.mp3', base_name: str = '',
+def mp3_to_transcript(audio_file_path: str, base_name: str = '',
                       chunk_length_ms: int = 60000, whisper_model: Optional[str] = None) -> str:
-    """Convert MP3 to transcript."""
+    """Convert MP3, WAV, or M4A to transcript."""
     if not os.path.exists(audio_file_path):
         raise FileNotFoundError(f"Audio file not found: {audio_file_path}")
 
     base_name = base_name or os.path.splitext(os.path.basename(audio_file_path))[0]
     output_dir = base_name
+    os.makedirs(output_dir, exist_ok=True)  # Ensure output directory exists
     final_transcript_file = get_output_file_path(output_dir, base_name, "txt")
 
     if os.path.exists(final_transcript_file):
@@ -177,7 +180,11 @@ def mp3_to_transcript(audio_file_path: str = 'audio.mp3', base_name: str = '',
             return final_transcript_file
 
     logger.info(f"Processing audio file: {audio_file_path}")
-    audio = AudioSegment.from_mp3(audio_file_path)
+    audio_format = os.path.splitext(audio_file_path)[1].lower()
+    if audio_format in ['.mp3', '.wav', '.m4a']:
+        audio = AudioSegment.from_file(audio_file_path, format=audio_format[1:])
+    else:
+        raise ValueError(f"Unsupported audio format: {audio_format}")
 
     chunks = math.ceil(len(audio) / chunk_length_ms)
     logger.info(f'Total chunks: {chunks}')
@@ -198,11 +205,18 @@ def process_audio_chunk(audio: AudioSegment, chunk_index: int, chunk_length_ms: 
     start_time = chunk_index * chunk_length_ms
     end_time = start_time + chunk_length_ms
     chunk = audio[start_time:end_time]
-    chunk_file_path = get_output_file_path(output_dir, f'{base_name}_chunk_{chunk_index}', "mp3")
+
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Use a temporary file with the original audio format
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+        chunk_file_path = temp_file.name
+        chunk.export(chunk_file_path, format="wav")
+
     chunk_transcript_path = get_output_file_path(output_dir, f'{base_name}_chunk_{chunk_index}', "txt")
 
     logger.debug(f'Processing chunk: {chunk_file_path}')
-    chunk.export(chunk_file_path, format='mp3')
 
     transcript = Transcriber.transcribe(chunk_file_path, whisper_model)
     with open(chunk_transcript_path, 'w', encoding='utf-8') as f:
